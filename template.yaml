@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  hcl-aws-assignment
+
+  Sample SAM Template for hcl-aws-assignment
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 30
+    LoggingConfig:
+      LogFormat: JSON
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - SqsQueuePolicy
+    Properties:
+      BucketName: hcl-aws-assignment-bucket
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt SqsQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: '.csv'  
+
+  SqsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: hcl-aws-assignment-queue    
+
+  SqsQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Id: QueuePolicy
+        Statement:
+          - Sid: Allow-SendMessage-To-Queue-From-S3-Event-Notification
+            Effect: Allow
+            Principal:
+              Service: "s3.amazonaws.com"
+            Action:
+              - "sqs:SendMessage"
+            Resource: !GetAtt SqsQueue.Arn
+      Queues:
+        - Ref: SqsQueue 
+
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: authorizer/
+      Handler: app.lambdaHandler
+
+  ProtectedApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Auth:
+        Authorizers:
+          MyAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            IdentitySource: method.request.header.Authorization        
+         
+  FileUploadFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      CodeUri: file-upload/
+      Handler: app.lambdaHandler
+      Events:
+        FileUpload:
+          Type: Api 
+          Properties:
+            Path: /fileUpload
+            Method: post
+            # RestApiId: !Ref ProtectedApi
+      Environment: 
+        Variables:
+          BUCKET_NAME: !Ref S3Bucket   
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3Bucket        
+    
+  SqsDestinationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: sqs-trigger-handler/
+      Handler: app.lambdaHandler
+      Events:
+        SQSDestinationEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SqsQueue.Arn
+      Environment: 
+        Variables:
+          BUCKET_NAME: !Ref S3Bucket    
+      Policies:
+        - S3ReadPolicy: 
+            BucketName: !Ref S3Bucket
+
+  S3ReadPolicy:
+   Type: AWS::IAM::ManagedPolicy
+   Properties:
+    PolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+          Resource: !Sub "arn:aws:s3:::${S3Bucket}/*"               

@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'hcl-aws-assignment
+
+  Sample SAM Template for hcl-aws-assignment
+
+  '
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 30
+    LoggingConfig:
+      LogFormat: JSON
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+    - SqsQueuePolicy
+    Properties:
+      BucketName: hcl-aws-assignment-bucket
+      NotificationConfiguration:
+        QueueConfigurations:
+        - Event: s3:ObjectCreated:*
+          Queue:
+            Fn::GetAtt:
+            - SqsQueue
+            - Arn
+          Filter:
+            S3Key:
+              Rules:
+              - Name: suffix
+                Value: .csv
+    Metadata:
+      SamResourceId: S3Bucket
+  SqsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: hcl-aws-assignment-queue
+    Metadata:
+      SamResourceId: SqsQueue
+  SqsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Id: QueuePolicy
+        Statement:
+        - Sid: Allow-SendMessage-To-Queue-From-S3-Event-Notification
+          Effect: Allow
+          Principal:
+            Service: s3.amazonaws.com
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - SqsQueue
+            - Arn
+      Queues:
+      - Ref: SqsQueue
+    Metadata:
+      SamResourceId: SqsQueuePolicy
+  FileUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-marjgf5wkorx/d3164652bf2284fa8333dc8305599187
+      Handler: app.lambdaHandler
+      Events:
+        FileUpload:
+          Type: Api
+          Properties:
+            Path: /fileUpload
+            Method: post
+      Environment:
+        Variables:
+          BUCKET_NAME:
+            Ref: S3Bucket
+      Policies:
+      - S3CrudPolicy:
+          BucketName:
+            Ref: S3Bucket
+    Metadata:
+      SamResourceId: FileUploadFunction
+  SqsDestinationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-marjgf5wkorx/55132dc7e446b2abff1310b5cf89a04f
+      Handler: app.lambdaHandler
+      Events:
+        SQSDestinationEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - SqsQueue
+              - Arn
+      Policies:
+      - S3ReadPolicy:
+          BucketName:
+            Ref: S3Bucket
+    Metadata:
+      SamResourceId: SqsDestinationFunction
+  S3ReadPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource:
+            Fn::Sub: arn:aws:s3:::${S3Bucket}/*
+    Metadata:
+      SamResourceId: S3ReadPolicy
