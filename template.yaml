@@ -97,7 +97,7 @@ Resources:
             Queue: !GetAtt SqsQueue.Arn
       Environment: 
         Variables:
-          BUCKET_NAME: !Ref S3Bucket    
+          SENDGRID_API_KEY: ''    
       Policies:
         - S3ReadPolicy: 
             BucketName: !Ref S3Bucket
