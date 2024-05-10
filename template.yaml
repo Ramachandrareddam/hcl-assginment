@@ -77,7 +77,7 @@ Resources:
           Properties:
             Path: /fileUpload
             Method: post
-            # RestApiId: !Ref ProtectedApi
+             RestApiId: !Ref ProtectedApi
       Environment: 
         Variables:
           BUCKET_NAME: !Ref S3Bucket   
